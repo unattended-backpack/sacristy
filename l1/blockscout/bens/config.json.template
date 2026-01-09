@@ -1,0 +1,29 @@
+{
+  "subgraphs_reader": {
+    "networks": {
+      "{{.chain_id}}": {
+        "blockscout": {
+          "url": "http://localhost"
+        },
+        "use_protocols": ["sacristy-ens"]
+      }
+    },
+    "protocols": {
+      "sacristy-ens": {
+        "tld_list": ["eth"],
+        "network_id": {{.chain_id}},
+        "subgraph_name": "sacristy/ens",
+        "address_resolve_technique": "all_domains",
+        "specific": {
+          "type": "ens_like",
+          "registry_contract": "{{.registry_address}}"
+        },
+        "meta": {
+          "short_name": "Sacristy ENS",
+          "title": "Ethereum Name Service",
+          "description": "ENS for the Sacristy testnet."
+        }
+      }
+    }
+  }
+}

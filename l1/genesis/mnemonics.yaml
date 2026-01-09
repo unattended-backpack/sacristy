@@ -1,0 +1,4 @@
+# Sacristy L1 Testnet CL Genesis Validator Configuration
+- mnemonic: "${EL_AND_CL_MNEMONIC}"
+  count: $NUMBER_OF_VALIDATORS
+  balance: $VALIDATOR_BALANCE

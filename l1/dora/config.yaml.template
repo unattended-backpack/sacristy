@@ -1,0 +1,29 @@
+logging:
+  outputLevel: "info"
+  outputStderr: false
+
+server:
+  host: "0.0.0.0"
+  port: {{ .Port }}
+
+frontend:
+  enabled: true
+  debug: false
+  pprof: false
+  minify: false
+  siteName: "Sacristy"
+  siteSubtitle: " L1 Testnet"
+
+chain:
+  displayName: "Sacristy Testnet"
+  configPath: "/genesis/config.yaml"
+
+beaconapi:
+  endpoints:
+    - name: "lodestar"
+      url: "{{ .BeaconUrl }}"
+
+database:
+  engine: "sqlite"
+  sqlite:
+    file: "/tmp/dora.db"

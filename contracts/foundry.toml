@@ -1,0 +1,18 @@
+[profile.default]
+src = "src"
+script = "script"
+out = "out"
+libs = ["dependencies"]
+optimizer = true
+optimizer_runs = 200
+
+# Map standard import paths to Soldeer locations.
+remappings = [
+  "forge-std/=dependencies/forge-std-1.12.0/src/",
+  "solady/=dependencies/solady-0.1.26/src/"
+]
+
+# Dependencies (installed via `forge soldeer install`).
+[dependencies]
+forge-std = "1.12"
+solady = "0.1.26"

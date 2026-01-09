@@ -1,0 +1,105 @@
+# Traefik dynamic configuration.
+http:
+  routers:
+{{ if .DoraHost }}
+    dora:
+      rule: "Host(`dora.sacristy.local`)"
+      service: dora
+      entryPoints:
+        - web
+{{ end }}
+{{ if .BlockscoutHost }}
+    blockscout:
+      rule: "Host(`blockscout.sacristy.local`)"
+      service: blockscout
+      entryPoints:
+        - web
+{{ end }}
+{{ if .BlobscanHost }}
+    blobscan:
+      rule: "Host(`blobscan.sacristy.local`)"
+      service: blobscan
+      entryPoints:
+        - web
+{{ end }}
+    # RPC endpoints (always available)
+    rpc:
+      rule: "Host(`rpc.sacristy.local`)"
+      service: rpc
+      entryPoints:
+        - web
+
+    beacon:
+      rule: "Host(`beacon.sacristy.local`)"
+      service: beacon
+      entryPoints:
+        - web
+{{ if .PrometheusHost }}
+    # Monitoring
+    prometheus:
+      rule: "Host(`prometheus.sacristy.local`)"
+      service: prometheus
+      entryPoints:
+        - web
+{{ end }}
+{{ if .GrafanaHost }}
+    grafana:
+      rule: "Host(`grafana.sacristy.local`)"
+      service: grafana
+      entryPoints:
+        - web
+{{ end }}
+{{ if .BensHost }}
+    # ENS name service
+    bens:
+      rule: "Host(`bens.sacristy.local`)"
+      service: bens
+      entryPoints:
+        - web
+{{ end }}
+  services:
+{{ if .DoraHost }}
+    dora:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .DoraHost }}:{{ .DoraPort }}"
+{{ end }}
+{{ if .BlockscoutHost }}
+    blockscout:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .BlockscoutHost }}:{{ .BlockscoutPort }}"
+{{ end }}
+{{ if .BlobscanHost }}
+    blobscan:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .BlobscanHost }}:{{ .BlobscanPort }}"
+{{ end }}
+    rpc:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .RpcHost }}:{{ .RpcPort }}"
+
+    beacon:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .BeaconHost }}:{{ .BeaconPort }}"
+{{ if .PrometheusHost }}
+    prometheus:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .PrometheusHost }}:{{ .PrometheusPort }}"
+{{ end }}
+{{ if .GrafanaHost }}
+    grafana:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .GrafanaHost }}:{{ .GrafanaPort }}"
+{{ end }}
+{{ if .BensHost }}
+    bens:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .BensHost }}:{{ .BensPort }}"
+{{ end }}

@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Execution layer (reth)
+  - job_name: 'reth'
+    static_configs:
+      - targets: ['{{ .ElHost }}:{{ .ElMetricsPort }}']
+        labels:
+          service: 'execution'
+
+  # Consensus layer (lodestar beacon)
+  - job_name: 'lodestar-beacon'
+    static_configs:
+      - targets: ['{{ .ClHost }}:{{ .ClMetricsPort }}']
+        labels:
+          service: 'consensus'
+
+  # Validator (lodestar validator)
+  - job_name: 'lodestar-validator'
+    static_configs:
+      - targets: ['{{ .ValidatorHost }}:{{ .ValidatorMetricsPort }}']
+        labels:
+          service: 'validator'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:{{ .PrometheusPort }}']

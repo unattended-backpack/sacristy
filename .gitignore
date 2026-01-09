@@ -1,0 +1,15 @@
+# Local configuration.
+.env
+
+# Build artifacts.
+kurtosis-artifacts/
+out/
+cache/
+dependencies/
+
+# Editor artifacts.
+.claude/
+.idea/
+.vscode/
+*.swp
+*~

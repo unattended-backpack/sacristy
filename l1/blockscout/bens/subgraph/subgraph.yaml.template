@@ -1,0 +1,84 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: ENSRegistry
+    network: {{.network}}
+    source:
+      address: "{{.registry_address}}"
+      abi: ENSRegistry
+      startBlock: {{.start_block}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Domain
+        - Account
+        - Transfer
+        - NewOwner
+        - NewResolver
+        - NewTTL
+      abis:
+        - name: ENSRegistry
+          file: ./abis/ENSRegistry.json
+      eventHandlers:
+        - event: Transfer(indexed bytes32,address)
+          handler: handleTransfer
+        - event: NewOwner(indexed bytes32,indexed bytes32,address)
+          handler: handleNewOwner
+        - event: NewResolver(indexed bytes32,address)
+          handler: handleNewResolver
+        - event: NewTTL(indexed bytes32,uint64)
+          handler: handleNewTTL
+      file: ./src/mapping.ts
+  # Static data source for the pre-deployed resolver.
+  # This ensures AddrChanged events are captured from block 0.
+  - kind: ethereum
+    name: PublicResolver
+    network: {{.network}}
+    source:
+      address: "{{.resolver_address}}"
+      abi: PublicResolver
+      startBlock: {{.start_block}}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Resolver
+        - AddrChanged
+        - NameChanged
+      abis:
+        - name: PublicResolver
+          file: ./abis/PublicResolver.json
+      eventHandlers:
+        - event: AddrChanged(indexed bytes32,address)
+          handler: handleAddrChanged
+        - event: NameChanged(indexed bytes32,string)
+          handler: handleNameChanged
+      file: ./src/mapping.ts
+templates:
+  - kind: ethereum
+    name: Resolver
+    network: {{.network}}
+    source:
+      abi: PublicResolver
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Resolver
+        - AddrChanged
+        - NameChanged
+      abis:
+        - name: PublicResolver
+          file: ./abis/PublicResolver.json
+      eventHandlers:
+        - event: AddrChanged(indexed bytes32,address)
+          handler: handleAddrChanged
+        - event: NameChanged(indexed bytes32,string)
+          handler: handleNameChanged
+      file: ./src/mapping.ts

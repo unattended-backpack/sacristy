@@ -1,0 +1,10 @@
+# Sacristy L1 Testnet EL Genesis Configuration
+
+# The mnemonic for validators.
+mnemonic: "${EL_AND_CL_MNEMONIC}"
+
+# Premine account details.
+el_premine_addrs: ${EL_PREMINE_ADDRS}
+
+# The path to a file containing genesis preloaded contracts.
+additional_preloaded_contracts: $ADDITIONAL_PRELOADED_CONTRACTS
