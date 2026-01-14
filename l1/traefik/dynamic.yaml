@@ -15,6 +15,13 @@ http:
       entryPoints:
         - web
 {{ end }}
+{{ if .BlockscoutApiHost }}
+    blockscout-api:
+      rule: "Host(`api.blockscout.sacristy.local`)"
+      service: blockscout-api
+      entryPoints:
+        - web
+{{ end }}
 {{ if .BlobscanHost }}
     blobscan:
       rule: "Host(`blobscan.sacristy.local`)"
@@ -69,6 +76,12 @@ http:
       loadBalancer:
         servers:
           - url: "http://{{ .BlockscoutHost }}:{{ .BlockscoutPort }}"
+{{ end }}
+{{ if .BlockscoutApiHost }}
+    blockscout-api:
+      loadBalancer:
+        servers:
+          - url: "http://{{ .BlockscoutApiHost }}:{{ .BlockscoutApiPort }}"
 {{ end }}
 {{ if .BlobscanHost }}
     blobscan:

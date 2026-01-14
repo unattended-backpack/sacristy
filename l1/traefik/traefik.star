@@ -60,6 +60,8 @@ def start(
         "DoraPort": config["port_dora_http"] if dora_context else "",
         "BlockscoutHost": blockscout_context.frontend.ip_address if blockscout_context else "",
         "BlockscoutPort": config["port_blockscout_frontend"] if blockscout_context else "",
+        "BlockscoutApiHost": blockscout_context.backend.ip_address if blockscout_context else "",
+        "BlockscoutApiPort": config["port_blockscout_http"] if blockscout_context else "",
         "BlobscanHost": blobscan_context.web.ip_address if blobscan_context else "",
         "BlobscanPort": config["port_blobscan_web"] if blobscan_context else "",
         "PrometheusHost": monitoring_context.prometheus.service.ip_address if monitoring_context else "",
@@ -118,6 +120,7 @@ def start(
         hosts={
             "dora": "dora.sacristy.local",
             "blockscout": "blockscout.sacristy.local",
+            "blockscout_api": "api.blockscout.sacristy.local",
             "blobscan": "blobscan.sacristy.local",
             "rpc": "rpc.sacristy.local",
             "beacon": "beacon.sacristy.local",

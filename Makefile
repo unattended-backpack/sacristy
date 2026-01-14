@@ -82,11 +82,11 @@ gateway:
 	echo "  http://dora.sacristy.local"; \
 	echo "  http://blobscan.sacristy.local"; \
 	echo "  http://blockscout.sacristy.local"; \
+	echo "  http://api.blockscout.sacristy.local"; \
 	echo "  http://bens.sacristy.local"; \
-	echo "  ..."; \
 	echo ""; \
 	echo "Make sure /etc/hosts contains entries:"; \
-	echo "  127.0.0.1  rpc.sacristy.local beacon.sacristy.local prometheus.sacristy.local grafana.sacristy.local dora.sacristy.local blobscan.sacristy.local blockscout.sacristy.local bens.sacristy.local"
+	echo "  127.0.0.1  rpc.sacristy.local beacon.sacristy.local prometheus.sacristy.local grafana.sacristy.local dora.sacristy.local blobscan.sacristy.local blockscout.sacristy.local api.blockscout.sacristy.local bens.sacristy.local"
 
 .PHONY: gateway-stop
 gateway-stop:
