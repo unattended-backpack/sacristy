@@ -134,13 +134,16 @@ CONFIG = {
     # Contract names must match compiled output: {name}.sol/{name}.json
     "genesis_contracts": {
         "MulticallDelegate": "0x0000000000000000000000000000000000007702",
-        "ENSRegistry": "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e",
-        "PublicResolver": "0xF29100983E058B709F3D539b0c765937B804AC15",
-        "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         "Test20": "0x0000000000000000000000000000000000000020",
         "Test721": "0x0000000000000000000000000000000000000721",
         "Test1155": "0x0000000000000000000000000000000000001155",
-        "CreateX": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed"
+        "CreateX": "0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed",
+        "DeterministicDeploymentProxy": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+        "Multicall3": "0xcA11bde05977b3631167028862bE2a173976CA11",
+        "ENSRegistry": "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e",
+        "PublicResolver": "0xF29100983E058B709F3D539b0c765937B804AC15",
+        "UniversalResolver": "0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe",
+        "WETH": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     },
 
     # Ports. These shouldn't need to change.
