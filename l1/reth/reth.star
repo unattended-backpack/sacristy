@@ -77,6 +77,7 @@ def start(plan, config, jwt_artifact, genesis_artifacts):
                     "--port={}".format(config["port_el_p2p_tcp"]),
                     "--discovery.port={}".format(config["port_el_p2p_udp"]),
                     "--log.stdout.format=terminal",
+                    "--rpc.eth-proof-window=1024",
                 ]),
             ],
             min_cpu=1000,
