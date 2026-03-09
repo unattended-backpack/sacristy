@@ -1,0 +1,15 @@
+# Gateway static configuration.
+#
+# This is the host-side traefik that bridges from localhost:80 into the
+# Kurtosis Docker networks. Routes are generated at runtime by `make gateway`.
+entryPoints:
+  web:
+    address: ":80"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yaml
+    watch: false
+
+log:
+  level: INFO

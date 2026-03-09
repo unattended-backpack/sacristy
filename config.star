@@ -8,7 +8,7 @@
 
 CONFIG = {
 
-    # These are the images needed and used for Sacristy.
+    # These are the images used for Sacristy.
     "foundry_image": "ghcr.io/foundry-rs/foundry:nightly",
     "genesis_generator_image": "ethpandaops/ethereum-genesis-generator:5.2.2",
     "l1_el_image": "ghcr.io/paradigmxyz/reth:latest",
@@ -33,6 +33,9 @@ CONFIG = {
     "traefik_image": "traefik:v3.2",
     "prometheus_image": "prom/prometheus:latest",
     "grafana_image": "grafana/grafana:latest",
+    "l2_node_image": "node:latest",
+    "l2_el_image": "el:latest",
+    "l2_batcher_image": "batcher:latest",
 
     # These flags are for enabling different pieces of optional infastructure.
     # Some flags have dependencies and cannot be enabled alone.
@@ -90,8 +93,30 @@ CONFIG = {
     # Enable verification of L1 bootstrap contracts.
     "l1_bootstrap_verify_enabled": True,
 
-    # Enable the L2 stack.
+    # Enable the L2 node with its execution client.
     "l2_enabled": True,
+
+    # Enable the L2 batch submitter.
+    "l2_batcher_enabled": True,
+
+    # These flags control Blockscout and its L2 microservices.
+    # Enable Blockscout, the block explorer.
+    "l2_blockscout_enabled": True,
+
+    # Enable the contract verifier.
+    "l2_blockscout_verifier_enabled": True,
+
+    # Enable the bytecode dictionary.
+    "l2_blockscout_bytecode_enabled": True,
+
+    # Enable the transaction and event signature dictionary.
+    "l2_blockscout_sig_enabled": True,
+
+    # Enable ENS indexing support.
+    "l2_blockscout_ens_enabled": True,
+
+    # Enable tracking statistics.
+    "l2_blockscout_stats_enabled": True,
 
     # L1 configuration.
     "l1_chain_id": 7357,
@@ -100,6 +125,15 @@ CONFIG = {
     # L2 configuration.
     "l2_chain_id": 51611,
     "l2_seconds_per_slot": 1,
+
+    # The L2's connection details for speaking to L1.
+    "l1_rpc_url": "http://rpc.sacristy.local",
+    "l1_beacon_url": "http://beacon.sacristy.local",
+
+    # The L2's contract addresses on L1 (created via `make deploy-l2`).
+    "l2_system_config_address": "0xd0D2B4171Ad93af58c98bDAAE1903940881E2705",
+    "l2_optimism_portal_address": "0xcCf7089d58128b5e85Ac580e666028c562C7b19c",
+    "l2_batch_inbox_address": "0xff0000000000000000000000000000000000C9AB",
 
     # The mnemonic used for prefunded genesis accounts and validators.
     "mnemonic": "faith faith faith faith faith faith faith grace grace grace grace grace",
@@ -179,6 +213,14 @@ CONFIG = {
     "port_graph_node_index": 8030,
     "port_bens_http": 8054,
     "port_blockscout_stats": 8050,
+
+    # L2 services.
+    "port_l2_el_rpc_http": 9545,
+    "port_l2_el_rpc_ws": 9546,
+    "port_l2_el_engine": 9551,
+    "port_l2_el_metrics": 9001,
+    "port_l2_node_rpc": 7545,
+    "port_l2_node_metrics": 7300,
 
     # Infrastructure.
     "port_postgres": 5432,

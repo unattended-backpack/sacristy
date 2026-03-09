@@ -1,0 +1,18 @@
+# Traefik static configuration.
+api:
+  dashboard: true
+  insecure: true
+
+entryPoints:
+  web:
+    address: ":{{ .HttpPort }}"
+  dashboard:
+    address: ":{{ .DashboardPort }}"
+
+providers:
+  file:
+    filename: /etc/traefik/dynamic.yaml
+    watch: false
+
+log:
+  level: INFO

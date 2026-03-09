@@ -1,28 +1,29 @@
-# Blockscout
+# L2 Blockscout
 #
-# Blockscout is an Ethereum execution layer block explorer.
+# Blockscout block explorer for the L2 rollup. Uses the same microservice
+# images as L1 but reads l2_blockscout_* config flags and l2_chain_id.
+# Since L2 runs in a separate Kurtosis enclave, service names are identical
+# to L1 (blockscout-db, blockscout, blockscout-frontend) without conflict.
 
 backend_config = import_module("./backend.star")
 frontend_config = import_module("./frontend.star")
-bens = import_module("./bens/bens.star")
 verifier = import_module("../../shared/blockscout/verifier.star")
 bytecode = import_module("../../shared/blockscout/bytecode.star")
 sig = import_module("../../shared/blockscout/sig.star")
 stats = import_module("../../shared/blockscout/stats.star")
 
 
-def start(plan, config, el_context, contracts_context):
+def start(plan, config, el_context):
     """
-    Start the Blockscout block explorer with optional services.
+    Start the L2 Blockscout block explorer with optional services.
 
-    Includes PostgreSQL and optional services like BENS (ENS indexing), a
-    contract verifier, bytecode database, signature provider, and statistics.
+    Includes PostgreSQL and optional services like a contract verifier,
+    bytecode database, signature provider, and statistics.
 
     Args:
         plan: Kurtosis plan.
         config: Configuration.
-        el_context: Execution layer context (RPC connection).
-        contracts_context: Compiled contract artifacts from contracts.build().
+        el_context: L2 execution layer context (RPC connection).
 
     Returns:
         Service context with Blockscout UI URL.
@@ -30,11 +31,10 @@ def start(plan, config, el_context, contracts_context):
     postgres = _start_postgres(plan, config)
 
     # Read feature flags.
-    verifier_enabled = config.get("l1_blockscout_verifier_enabled", True)
-    bytecode_enabled = config.get("l1_blockscout_bytecode_enabled", True)
-    sig_enabled = config.get("l1_blockscout_sig_enabled", True)
-    bens_enabled = config.get("l1_blockscout_ens_enabled", True)
-    stats_enabled = config.get("l1_blockscout_stats_enabled", True)
+    verifier_enabled = config.get("l2_blockscout_verifier_enabled", True)
+    bytecode_enabled = config.get("l2_blockscout_bytecode_enabled", True)
+    sig_enabled = config.get("l2_blockscout_sig_enabled", True)
+    stats_enabled = config.get("l2_blockscout_stats_enabled", False)
 
     # Start optional microservices (order matters due to dependencies).
     # 1. Start smart-contract-verifier (no dependencies).
@@ -54,15 +54,6 @@ def start(plan, config, el_context, contracts_context):
     if sig_enabled:
         sig_context = sig.start(plan, config, bytecode_context)
 
-    # 4. Start BENS (ENS indexing).
-    bens_context = None
-    if bens_enabled:
-        bens_context = bens.start(plan, config, el_context, contracts_context)
-
-    # Get ENS config.
-    ens_registry_address = config["genesis_contracts"]["ENSRegistry"]
-    bens_url = bens_context.url if bens_context else None
-
     # Start Blockscout backend (API) with microservices configured.
     backend = _start_backend(
         plan,
@@ -71,8 +62,6 @@ def start(plan, config, el_context, contracts_context):
         postgres,
         bytecode_context,
         sig_context,
-        ens_registry_address,
-        bens_url,
     )
 
     # 4. Start stats (depends on blockscout backend being ready).
@@ -80,11 +69,10 @@ def start(plan, config, el_context, contracts_context):
     if stats_enabled:
         stats_context = stats.start(plan, config, postgres, backend)
 
-    # Start Blockscout frontend with stats API and BENS integration.
-    frontend = _start_frontend(plan, config, backend, stats_context, bens_url)
+    # Start Blockscout frontend with optional stats API.
+    frontend = _start_frontend(plan, config, backend, stats_context)
     return struct(
         postgres=postgres,
-        bens=bens_context,
         verifier=verifier_context,
         bytecode=bytecode_context,
         sig=sig_context,
@@ -141,8 +129,6 @@ def _start_backend(
     postgres,
     bytecode_context,
     sig_context,
-    ens_registry_address,
-    bens_url,
 ):
     """Start Blockscout backend with microservices integration."""
     env_vars = dict(backend_config.CONFIG)
@@ -152,18 +138,8 @@ def _start_backend(
     env_vars["ETHEREUM_JSONRPC_HTTP_URL"] = el_context.rpc_http_url
     env_vars["ETHEREUM_JSONRPC_TRACE_URL"] = el_context.rpc_http_url
     env_vars["ETHEREUM_JSONRPC_WS_URL"] = el_context.rpc_ws_url
-    env_vars["CHAIN_ID"] = str(config["l1_chain_id"])
+    env_vars["CHAIN_ID"] = str(config["l2_chain_id"])
     env_vars["PORT"] = str(config["port_blockscout_http"])
-
-    # Add ENS configuration if registry address provided.
-    if ens_registry_address:
-        env_vars["ENS_ENABLED"] = "true"
-        env_vars["ENS_REGISTRY_CONTRACT"] = ens_registry_address
-
-    # Add BENS microservice configuration if URL provided.
-    if bens_url:
-        env_vars["MICROSERVICE_BENS_ENABLED"] = "true"
-        env_vars["MICROSERVICE_BENS_URL"] = bens_url
 
     # Add smart contract verifier via eth-bytecode-db if enabled.
     if bytecode_context:
@@ -202,14 +178,14 @@ def _start_backend(
     return service
 
 
-def _start_frontend(plan, config, backend, stats_context, bens_url):
-    """Start Blockscout frontend with optional stats API and BENS integration."""
+def _start_frontend(plan, config, backend, stats_context):
+    """Start Blockscout frontend with optional stats API."""
     env_vars = dict(frontend_config.CONFIG)
 
     # Add dynamic values computed at runtime.
     env_vars["NEXT_PUBLIC_API_HOST"] = backend.ip_address
     env_vars["NEXT_PUBLIC_API_PORT"] = str(config["port_blockscout_http"])
-    env_vars["NEXT_PUBLIC_NETWORK_ID"] = str(config["l1_chain_id"])
+    env_vars["NEXT_PUBLIC_NETWORK_ID"] = str(config["l2_chain_id"])
     env_vars["PORT"] = str(config["port_blockscout_frontend"])
 
     # Stats API - enables charts and statistics.
@@ -218,10 +194,6 @@ def _start_frontend(plan, config, backend, stats_context, bens_url):
             stats_context.service.ip_address,
             config["port_blockscout_stats"],
         )
-
-    # Add BENS (Name Service) configuration if URL provided.
-    if bens_url:
-        env_vars["NEXT_PUBLIC_NAME_SERVICE_API_HOST"] = bens_url
 
     # Start the service.
     service = plan.add_service(
