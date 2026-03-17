@@ -33,8 +33,8 @@ CONFIG = {
     "traefik_image": "traefik:v3.2",
     "prometheus_image": "prom/prometheus:latest",
     "grafana_image": "grafana/grafana:latest",
-    "l2_node_image": "node:latest",
-    "l2_el_image": "el:latest",
+    "l2_node_image": "kosher-node:latest",
+    "l2_el_image": "op-reth:latest",
     "l2_batcher_image": "batcher:latest",
 
     # These flags are for enabling different pieces of optional infastructure.
@@ -97,7 +97,7 @@ CONFIG = {
     "l2_enabled": True,
 
     # Enable the L2 batch submitter.
-    "l2_batcher_enabled": True,
+    "l2_batcher_enabled": False,
 
     # These flags control Blockscout and its L2 microservices.
     # Enable Blockscout, the block explorer.
@@ -133,6 +133,7 @@ CONFIG = {
     # The L2's contract addresses on L1 (created via `make deploy-l2`).
     "l2_system_config_address": "0xd0D2B4171Ad93af58c98bDAAE1903940881E2705",
     "l2_optimism_portal_address": "0xcCf7089d58128b5e85Ac580e666028c562C7b19c",
+    "l2_verifier_address": "0x9f216197D83deCd7b807e2A627E102665bd3F8f7",
     "l2_batch_inbox_address": "0xff0000000000000000000000000000000000C9AB",
 
     # The mnemonic used for prefunded genesis accounts and validators.
