@@ -1,85 +1,148 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.15;
+
+// SigilVerifier requires solc ≥ 0.8.24 for the `blobhash` opcode.
+pragma solidity ^0.8.25;
 
 import { Script, console } from "forge-std/Script.sol";
 
-import { SystemConfig } from "src/l2/l1/SystemConfig.sol";
-import { KosherPortal } from "src/l2/l1/KosherPortal.sol";
-import { AddressManager } from "src/l2/l1/AddressManager.sol";
-import { KosherVerifier } from "src/l2/verifier/KosherVerifier.sol";
-import { Proxy } from "src/l2/predeploys/Proxy.sol";
+import { SigilVerifier } from "src/l2/verifier/SigilVerifier.sol";
 import { ISP1Verifier } from "src/l2/verifier/ISP1Verifier.sol";
 
 /// @title DeployL2Contracts
-/// @notice Deploys L1 rollup contracts to any L1 RPC. These contracts are used by the L2 rollup
-///         to process deposits, verify withdrawals, and configure the system.
+/// @notice Deploys the L1 contracts for a Sigil rollup. Sigil collapses the
+///         OP-stack-style BlobRegistry + DepositQueue + Verifier + Portal
+///         into one contract — see `optimism/NEW_DERIVATION.md` for the
+///         design doc and `src/l2/verifier/SigilVerifier.sol` for the
+///         contract.
 ///
 ///         Usage:
 ///           forge script script/DeployL2Contracts.s.sol \
 ///             --rpc-url $L1_RPC --private-key $ADMIN_KEY --broadcast
 ///
-///         Environment variables:
-///           BATCHER_PRIVATE_KEY   - Private key of the batch submitter (address derived).
-///           SEQUENCER_PRIVATE_KEY - Private key of the sequencer (address derived).
-///           BATCH_INBOX_ADDRESS   - Batch inbox address (default: 0xff0000000000000000000000000000000000C9AB).
-///           GAS_LIMIT             - L2 gas limit (default: 30000000).
+///         All environment variables are REQUIRED — no defaults, since
+///         silently deploying with a placeholder zkVM verifier or zero
+///         genesis root would be a footgun:
+///           L2_CHAIN_ID                 - L2 chain id.
+///           L1_CHAIN_ID                 - L1 chain id this L2 settles to.
+///           GENESIS_TIMESTAMP           - L2 genesis block Unix-seconds
+///                                         timestamp.
+///           GENESIS_ACCOUNTS_FILE       - Path to a binary file
+///                                         containing the zstd-compressed
+///                                         RLP encoding of the genesis
+///                                         accounts (`sigil genesis`
+///                                         emits it). Lands in
+///                                         deployment-tx calldata for
+///                                         off-chain validator retrieval.
+///           L2_MINIMUM_BLOCK_GAS_LIMIT  - Floor on the per-block gas
+///                                         limit. Sequencers may pick
+///                                         any per-blob ceiling above
+///                                         this value.
+///           L2_MINIMUM_TX_GAS_LIMIT     - Floor on the per-tx gas-limit
+///                                         cap (`cfg_env.tx_gas_limit_cap`).
+///                                         Default is EIP-7825 Osaka:
+///                                         16,777,216 = 2^24.
+///           L2_MINIMUM_CODE_SIZE        - Floor on the per-blob EIP-170
+///                                         deployed-code cap. Default
+///                                         24,576.
+///           L2_MAXIMUM_CODE_SIZE        - Ceiling on the per-blob EIP-170
+///                                         deployed-code cap. Set equal
+///                                         to the floor to pin, or higher
+///                                         to grant sequencer policy
+///                                         diversity within a range.
+///           L2_MINIMUM_INITCODE_SIZE    - Floor on the per-blob EIP-3860
+///                                         initcode cap. Default 49,152.
+///           L2_MAXIMUM_INITCODE_SIZE    - Ceiling on the per-blob EIP-3860
+///                                         initcode cap.
+///           L2_MAXIMUM_SEQUENCER_CALLDATA_SIZE
+///                                       - Ceiling on the per-action
+///                                         `Call.calldata` size for
+///                                         sequencer-space pre-execution
+///                                         calls. Default 65,536 bytes.
+///           PROVER_QUORUM               - Minimum distinct zkVM systems
+///                                         (1 for single-system testnet,
+///                                         ≥ 2 for production).
+///           SP1_VERIFIER        - Address of the SP1 verifier contract.
+///                                 Use the zero address explicitly to
+///                                 disable on-chain verification on a
+///                                 testnet — `SigilVerifier.submitProof`
+///                                 then skips the SP1 check.
+///           SP1_VKEY            - SP1 verification key.
+///           GENESIS_OUTPUT_ROOT - L2 genesis output root.
 contract DeployL2Contracts is Script {
-    function run() public {
-        address admin = msg.sender;
-        address batcher = vm.addr(vm.envUint("BATCHER_PRIVATE_KEY"));
-        address sequencer = vm.addr(vm.envUint("SEQUENCER_PRIVATE_KEY"));
-        address batchInbox = vm.envOr("BATCH_INBOX_ADDRESS", address(0xfF0000000000000000000000000000000000C9aB));
-        uint64 gasLimit = uint64(vm.envOr("GAS_LIMIT", uint256(30_000_000)));
+  function run() public {
+    uint64 chainId = uint64(vm.envUint("L2_CHAIN_ID"));
+    uint64 l1ChainId = uint64(vm.envUint("L1_CHAIN_ID"));
+    uint64 genesisTimestamp = uint64(vm.envUint("GENESIS_TIMESTAMP"));
+    bytes memory accountsData = vm.readFileBinary(
+      vm.envString("GENESIS_ACCOUNTS_FILE")
+    );
+    uint64 minimumBlockGasLimit =
+      uint64(vm.envUint("L2_MINIMUM_BLOCK_GAS_LIMIT"));
+    uint64 minimumTxGasLimit =
+      uint64(vm.envUint("L2_MINIMUM_TX_GAS_LIMIT"));
+    uint64 minimumCodeSize =
+      uint64(vm.envUint("L2_MINIMUM_CODE_SIZE"));
+    uint64 maximumCodeSize =
+      uint64(vm.envUint("L2_MAXIMUM_CODE_SIZE"));
+    uint64 minimumInitcodeSize =
+      uint64(vm.envUint("L2_MINIMUM_INITCODE_SIZE"));
+    uint64 maximumInitcodeSize =
+      uint64(vm.envUint("L2_MAXIMUM_INITCODE_SIZE"));
+    uint64 maximumSequencerCalldataSize =
+      uint64(vm.envUint("L2_MAXIMUM_SEQUENCER_CALLDATA_SIZE"));
+    uint8 quorum = uint8(vm.envUint("PROVER_QUORUM"));
+    address sp1Verifier = vm.envAddress("SP1_VERIFIER");
+    bytes32 sp1Vkey = vm.envBytes32("SP1_VKEY");
+    bytes32 genesisOutputRoot = vm.envBytes32("GENESIS_OUTPUT_ROOT");
 
-        vm.startBroadcast();
+    vm.startBroadcast();
 
-        // 1. Deploy AddressManager.
-        AddressManager addressManager = new AddressManager();
-        console.log("AddressManager:", address(addressManager));
+    // Single-system testnet deployment: the SP1 verifier is the only
+    // system in the quorum. Production deployments would seed a
+    // quorum of ≥ 2 distinct zkVM verifiers (SP1 + RISC Zero + ...).
+    address[] memory verifiers = new address[](1);
+    verifiers[0] = sp1Verifier;
+    bytes32[] memory vkeys = new bytes32[](1);
+    vkeys[0] = sp1Vkey;
 
-        // 2. Deploy SystemConfig behind a proxy.
-        SystemConfig systemConfigImpl = new SystemConfig();
-        Proxy systemConfigProxy = new Proxy(admin);
-        // Point proxy to implementation.
-        systemConfigProxy.upgradeTo(address(systemConfigImpl));
-        // Initialize via the proxy.
-        SystemConfig(address(systemConfigProxy)).initialize(
-            admin,                                          // owner
-            0,                                              // overhead
-            0x00000000000000000000000000000000000000000000000000000a000000000a, // scalar (baseFeeScalar=10, blobBaseFeeScalar=10)
-            bytes32(uint256(uint160(batcher))),              // batcherHash
-            gasLimit,                                       // gasLimit
-            sequencer,                                      // unsafeBlockSigner
-            batchInbox                                      // batchInbox
-        );
-        console.log("SystemConfig (proxy):", address(systemConfigProxy));
+    SigilVerifier verifier = new SigilVerifier(
+      chainId,
+      l1ChainId,
+      genesisTimestamp,
+      minimumBlockGasLimit,
+      minimumTxGasLimit,
+      minimumCodeSize,
+      maximumCodeSize,
+      minimumInitcodeSize,
+      maximumInitcodeSize,
+      maximumSequencerCalldataSize,
+      accountsData,
+      verifiers,
+      vkeys,
+      quorum,
+      genesisOutputRoot
+    );
+    console.log("SigilVerifier:", address(verifier));
 
-        // 3. Deploy KosherVerifier (with a dummy SP1 verifier for testnet).
-        // For testnet, we use address(0) as the SP1 verifier — proofs won't be verified.
-        KosherVerifier verifier = new KosherVerifier(
-            ISP1Verifier(address(0)),   // dummy verifier for testnet
-            bytes32(0),                 // aggregation vkey
-            bytes32(0),                 // rollup config hash
-            bytes32(0),                 // range vkey commitment
-            bytes32(0),                 // genesis output root (will be set later)
-            0                           // genesis block num
-        );
-        console.log("KosherVerifier:", address(verifier));
+    vm.stopBroadcast();
 
-        // 4. Deploy KosherPortal behind a proxy.
-        KosherPortal portalImpl = new KosherPortal(address(verifier));
-        Proxy portalProxy = new Proxy(admin);
-        portalProxy.upgradeTo(address(portalImpl));
-        console.log("KosherPortal (proxy):", address(portalProxy));
-
-        vm.stopBroadcast();
-
-        // Output summary for config.star.
-        console.log("");
-        console.log("=== Deployed L2 Contracts ===");
-        console.log("l2_system_config_address:", address(systemConfigProxy));
-        console.log("l2_optimism_portal_address:", address(portalProxy));
-        console.log("address_manager:", address(addressManager));
-        console.log("kosher_verifier:", address(verifier));
-    }
+    console.log("");
+    console.log("=== Deployed Sigil Contracts ===");
+    console.log("sigil_verifier:", address(verifier));
+    console.log("chain_id:", uint256(chainId));
+    console.log("l1_chain_id:", uint256(l1ChainId));
+    console.log("genesis_timestamp:", uint256(genesisTimestamp));
+    console.log("accounts_data_bytes:", accountsData.length);
+    console.log("minimum_block_gas_limit:", uint256(minimumBlockGasLimit));
+    console.log("minimum_tx_gas_limit:", uint256(minimumTxGasLimit));
+    console.log("minimum_code_size:", uint256(minimumCodeSize));
+    console.log("maximum_code_size:", uint256(maximumCodeSize));
+    console.log("minimum_initcode_size:", uint256(minimumInitcodeSize));
+    console.log("maximum_initcode_size:", uint256(maximumInitcodeSize));
+    console.log(
+      "maximum_sequencer_calldata_size:",
+      uint256(maximumSequencerCalldataSize)
+    );
+    console.log("quorum:", uint256(quorum));
+  }
 }

@@ -5,14 +5,14 @@
 # when the L2 enclave is torn down and restarted.
 
 
-def start(plan, config, l2_el_context, blockscout_context=None):
+def start(plan, config, sigil_context, blockscout_context=None):
     """
     Start Traefik reverse proxy with routes for L2 services.
 
     Args:
         plan: Kurtosis plan.
         config: Configuration.
-        l2_el_context: L2 execution layer context (op-reth).
+        sigil_context: Sigil service context (provides EL RPC).
         blockscout_context: Optional Blockscout explorer context.
 
     Returns:
@@ -35,8 +35,8 @@ def start(plan, config, l2_el_context, blockscout_context=None):
 
     # Build template data.
     template_data = {
-        "RpcHost": l2_el_context.service.ip_address,
-        "RpcPort": config["port_l2_el_rpc_http"],
+        "RpcHost": sigil_context.service.ip_address,
+        "RpcPort": config["port_l2_rpc_http"],
 
         # Optional services. Empty string disables the route in the template.
         "BlockscoutHost": blockscout_context.frontend.ip_address if blockscout_context else "",

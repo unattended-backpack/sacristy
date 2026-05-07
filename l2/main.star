@@ -1,6 +1,6 @@
 # Sacristy L2
 #
-# Deploys an OP Stack L2 rollup in its own Kurtosis enclave, consuming L1
+# Deploys the Sigil L2 rollup in its own Kurtosis enclave, consuming L1
 # connection details from config. This allows running multiple L2 instances
 # against a single shared L1, or against a public Ethereum testnet.
 #
@@ -16,10 +16,8 @@
 #     '{"l2_sequencer_private_key": "0x...", "l2_batcher_private_key": "0x..."}'
 
 config_module = import_module("../config.star")
-genesis = import_module("./genesis/genesis.star")
-op_reth = import_module("./op_reth/op_reth.star")
-kona_node = import_module("./kona_node/kona_node.star")
-kona_batcher = import_module("./kona_batcher/kona_batcher.star")
+sigil = import_module("./sigil/sigil.star")
+batcher = import_module("./batcher/batcher.star")
 blockscout = import_module("./blockscout/blockscout.star")
 traefik = import_module("./traefik/traefik.star")
 
@@ -42,39 +40,36 @@ def run(plan, args={}):
     # Validate required config.
     _validate(config)
 
-    # Phase 1: Generate JWT + genesis.json (before op-reth).
-    base = genesis.generate_base(plan, config)
+    # Genesis is a host-side artifact built once via `make genesis`.
+    # The output root pinned into the deployed SigilVerifier is the
+    # output root of THIS file, so building it inside the enclave on
+    # every `make l2` would break the chain. Upload the existing file
+    # as a kurtosis artifact; downstream services consume it as-is.
+    genesis_artifact = plan.upload_files(
+        src="../genesis.json",
+        name="l2-genesis",
+    )
+    genesis_artifacts = struct(l2_genesis=genesis_artifact)
 
-    # Start L2 execution engine (op-reth). Must start first.
-    l2_el = op_reth.start(plan, config, base.jwt, base.l2_genesis)
+    # Start the unified Sigil node (EL + CL in one process).
+    l2_sigil = sigil.start(plan, config, genesis_artifacts)
 
-    # Phase 2: Build rollup config (queries op-reth for real genesis hash).
-    rollup = genesis.generate_rollup_config(plan, config, l2_el)
-
-    # Start rollup node (kona-node sequencer).
-    l2_node = kona_node.start(plan, config, struct(
-        rollup_config=rollup.rollup_config,
-        l1_chain_config=rollup.l1_chain_config,
-        jwt=base.jwt,
-    ), l2_el)
-
-    # Start batch submitter (kona-batcher) if enabled.
+    # Start batch submitter if enabled.
     l2_batcher = None
     if config.get("l2_batcher_enabled", True):
-        l2_batcher = kona_batcher.start(plan, config, l2_el)
+        l2_batcher = batcher.start(plan, config, l2_sigil)
 
     # Start Blockscout block explorer if enabled.
     blockscout_context = None
     if config.get("l2_blockscout_enabled", True):
-        blockscout_context = blockscout.start(plan, config, l2_el)
+        blockscout_context = blockscout.start(plan, config, l2_sigil)
 
     # Start reverse proxy (traefik). Starts last.
-    l2_traefik = traefik.start(plan, config, l2_el, blockscout_context=blockscout_context)
+    l2_traefik = traefik.start(plan, config, l2_sigil, blockscout_context=blockscout_context)
 
     return struct(
         config=config,
-        l2_el=l2_el,
-        l2_node=l2_node,
+        l2_sigil=l2_sigil,
         l2_batcher=l2_batcher,
         l2_traefik=l2_traefik,
         blockscout=blockscout_context,
@@ -98,9 +93,13 @@ def _validate(config):
         if value == "" or value == None:
             fail("L2 config '{}' is required but not set.".format(key))
 
-    # System config address must be deployed (not zero).
-    if config.get("l2_system_config_address", "") == "0x0000000000000000000000000000000000000000":
+    # Verifier address must be deployed (not zero). Sigil's single L1
+    # contract — see `config.star` for context — must exist before any
+    # L2 service starts, since the deriver subscribes to its event
+    # stream.
+    if config.get("l2_verifier_address", "") == "0x0000000000000000000000000000000000000000":
         fail(
-            "l2_system_config_address is zero. " +
-            "Deploy L1 contracts first with `make deploy-l2` and update config.star."
+            "l2_verifier_address is zero. " +
+            "Run `make genesis` then `make deploy-l2`, paste the printed " +
+            "SigilVerifier address into config.star, then re-run `make l2`."
         )

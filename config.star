@@ -33,8 +33,7 @@ CONFIG = {
     "traefik_image": "traefik:v3.2",
     "prometheus_image": "prom/prometheus:latest",
     "grafana_image": "grafana/grafana:latest",
-    "l2_node_image": "kosher-node:latest",
-    "l2_el_image": "op-reth:latest",
+    "l2_node_image": "sigil:latest",
     "l2_batcher_image": "batcher:latest",
 
     # These flags are for enabling different pieces of optional infastructure.
@@ -93,7 +92,7 @@ CONFIG = {
     # Enable verification of L1 bootstrap contracts.
     "l1_bootstrap_verify_enabled": True,
 
-    # Enable the L2 node with its execution client.
+    # Enable the L2 node.
     "l2_enabled": True,
 
     # Enable the L2 batch submitter.
@@ -124,17 +123,57 @@ CONFIG = {
 
     # L2 configuration.
     "l2_chain_id": 51611,
+
+    # Cryptographic floor on the per-block gas limit, baked into the
+    # SigilVerifier as `MINIMUM_BLOCK_GAS_LIMIT` and into the L2
+    # genesis as `Genesis::minimum_block_gas_limit`. Sequencers MAY
+    # pick any per-blob ceiling above this floor — set
+    # `--sequencer.block-gas-limit` on the node accordingly.
+    "l2_minimum_block_gas_limit": 30000000,
+
+    # Cryptographic floor on the per-tx gas-limit cap
+    # (`cfg_env.tx_gas_limit_cap`). EIP-7825's Osaka constant
+    # `2^24 = 16,777,216` is the natural default — sequencers may
+    # post blobs with a higher per-blob cap by setting
+    # `--sequencer.tx-gas-limit` and the matching
+    # `--batcher.tx-gas-limit` (must agree).
+    "l2_minimum_tx_gas_limit": 16777216,
+
+    # EIP-170 (`cfg_env.limit_contract_code_size`) and EIP-3860
+    # (`cfg_env.limit_contract_initcode_size`) per-blob caps. Both
+    # bounded by Genesis-pinned floors AND ceilings — set min == max
+    # to lock the chain at one value, or raise max above min to
+    # grant sequencer policy diversity in the range. Defaults equal
+    # to the Ethereum mainnet constants.
+    "l2_minimum_code_size": 24576,
+    "l2_maximum_code_size": 24576,
+    "l2_minimum_initcode_size": 49152,
+    "l2_maximum_initcode_size": 49152,
+
+    # Per-action `Call.calldata` ceiling for sequencer-space
+    # pre-execution calls. Bound cryptographically into every SNARK;
+    # immutable after genesis.
+    "l2_maximum_sequencer_calldata_size": 65536,
+
     "l2_seconds_per_slot": 1,
 
     # The L2's connection details for speaking to L1.
     "l1_rpc_url": "http://rpc.sacristy.local",
     "l1_beacon_url": "http://beacon.sacristy.local",
 
-    # The L2's contract addresses on L1 (created via `make deploy-l2`).
-    "l2_system_config_address": "0xd0D2B4171Ad93af58c98bDAAE1903940881E2705",
-    "l2_optimism_portal_address": "0xcCf7089d58128b5e85Ac580e666028c562C7b19c",
-    "l2_verifier_address": "0x9f216197D83deCd7b807e2A627E102665bd3F8f7",
-    "l2_batch_inbox_address": "0xff0000000000000000000000000000000000C9AB",
+    # The L2's verifier contract on L1 (deployed via `make deploy-l2`).
+    # Update this after `make deploy-l2` prints the SigilVerifier
+    # address. Sigil collapses the OP-stack BlobRegistry + DepositQueue +
+    # Verifier + Portal into a single contract, so this address is also
+    # where blobs are posted ("batch inbox") and where deposits land —
+    # there are no separate addresses for those roles.
+    "l2_verifier_address": "0xd829E17ce5f942365EeB589C0F59e0C104BC5cA4",
+
+    # Recipient of priority fees from this batcher's locally-built L2
+    # blocks. Encoded into every blob's batch-format header. For
+    # testnet, any funded address works; production sets a real fee
+    # vault.
+    "l2_fee_recipient": "0x2ed0af353D8B71a3f4ED87AE443574da06959868",
 
     # The mnemonic used for prefunded genesis accounts and validators.
     "mnemonic": "faith faith faith faith faith faith faith grace grace grace grace grace",
@@ -216,11 +255,9 @@ CONFIG = {
     "port_blockscout_stats": 8050,
 
     # L2 services.
-    "port_l2_el_rpc_http": 9545,
-    "port_l2_el_rpc_ws": 9546,
-    "port_l2_el_engine": 9551,
-    "port_l2_el_metrics": 9001,
-    "port_l2_node_rpc": 7545,
+    "port_l2_rpc_http": 9545,
+    "port_l2_rpc_ws": 9546,
+    "port_l2_metrics": 9001,
     "port_l2_node_metrics": 7300,
 
     # Infrastructure.

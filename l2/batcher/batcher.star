@@ -1,32 +1,34 @@
-# kona-batcher
+# Batcher
 #
-# Batch submitter. Reads L2 blocks from op-reth and submits them as batches
-# to the L1 batch inbox address.
+# Reads L2 blocks from the Sigil node and posts them as 254-bit-packed
+# blobs to L1 by calling `postBlobs()` on the SigilVerifier. Sigil has
+# no separate batch inbox — the verifier IS the inbox.
 
 
-def start(plan, config, l2_el):
+def start(plan, config, sigil):
     """
     Start the batch submitter.
 
     Args:
         plan: Kurtosis plan.
         config: Configuration.
-        l2_el: L2 execution engine context (from op_reth.start).
+        sigil: Sigil service context (provides EL RPC).
 
     Returns:
         Service context.
     """
     service = plan.add_service(
-        name="kona-batcher",
+        name="batcher",
         config=ServiceConfig(
             image=config["l2_batcher_image"],
             entrypoint=["/bin/sh", "-c"],
             cmd=[
                 " ".join([
-                    "kona-batcher",
-                    "--l2-rpc-url {}".format(l2_el.rpc_http_url),
+                    "batcher",
+                    "--l2-rpc-url {}".format(sigil.rpc_http_url),
                     "--l1-rpc-url {}".format(config["l1_rpc_url"]),
-                    "--batch-inbox {}".format(config["l2_batch_inbox_address"]),
+                    "--verifier-address {}".format(config["l2_verifier_address"]),
+                    "--fee-recipient {}".format(config["l2_fee_recipient"]),
                     "--private-key {}".format(config["l2_batcher_private_key"]),
                 ]),
             ],
