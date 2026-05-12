@@ -16,9 +16,14 @@ import { SecureMerkleTrie } from "src/l2/lib/SecureMerkleTrie.sol";
 ///
 ///         - **Blob registry.** `postBlobs()` pulls every versioned hash off
 ///           the EIP-4844 `BLOBHASH` opcode and assigns monotonic ids.
-///         - **Deposit queue.** `deposit()` appends to a Keccak hash chain at
-///           storage slot 0; the prover walks an MPT proof from any L1 state
-///           root to slot 0 of this contract to anchor `newProcessedDepositRoot`.
+///         - **Deposit queue.** `deposit()` appends to a Keccak hash chain
+///           and snapshots `(blockNumber, rootAfter)` into the `deposits[]`
+///           array on every call. `submitProof()` reads
+///           `deposits[newProcessedDepositCount - 1].rootAfter` directly via
+///           SLOAD to anchor `newProcessedDepositRoot` — no L1-state MPT
+///           walk inside the SNARK. This makes the immutable verifier
+///           independent of the L1 state-trie format (i.e., survives any
+///           future Ethereum migration to verkle / binary tries).
 ///         - **Multi-zkVM quorum verifier.** `submitProof()` accepts ≥ QUORUM
 ///           proofs from distinct zkVM systems (each backed by its own
 ///           per-system verifier contract conforming to [`ISP1Verifier`]).
@@ -136,17 +141,37 @@ contract SigilVerifier {
   //                   DEPOSIT QUEUE STATE
   // ============================================================
 
-  /// @notice Hash-chain commitment to every deposit ever made. Lives
-  ///         at storage slot 0 — the prover walks an MPT proof to
-  ///         this slot to anchor `newProcessedDepositRoot`.
+  struct DepositMeta {
+    uint64 blockNumber;
+    bytes32 rootAfter;
+  }
+
+  /// @notice Per-deposit metadata. `deposits[i].rootAfter` is the
+  ///         depositRoot hash chain commitment *after* folding the
+  ///         i-th deposit; `deposits[i].blockNumber` is the L1 block
+  ///         in which the deposit was made.
   ///
-  ///         WARNING: do not reorder storage variables; this MUST stay
-  ///         at slot 0 to match `prover_program::DEPOSIT_ROOT_SLOT`.
+  ///         `submitProof()` reads `deposits[newProcessedDepositCount
+  ///         - 1].rootAfter` to anchor each proof's claimed deposit
+  ///         root, with a maximality check enforcing that no later
+  ///         deposit at `blockNumber <= l1RangeEnd` was skipped.
+  ///
+  ///         The array is append-only; no entries are ever removed.
+  DepositMeta[] public deposits;
+
+  /// @notice Live hash-chain commitment to every deposit ever made.
+  ///         Equals `deposits[deposits.length - 1].rootAfter` after
+  ///         the first deposit, or `bytes32(0)` before. Kept as a
+  ///         distinct variable so external callers (e.g., explorers)
+  ///         can query the current root without an array index. Not
+  ///         used by `submitProof` — the per-proof anchor is read
+  ///         out of the `deposits[]` array directly.
   bytes32 public depositRoot;
 
-  /// @notice Total deposits made. Informational; the leaf encoding
-  ///         doesn't depend on this.
-  uint64 public depositCount;
+  // Note: there's no separate `depositCount` storage variable. The
+  // count is `deposits.length` (auto-exposed by Solidity's array
+  // length read; no extra SSTORE on deposit). The `Deposit` event's
+  // `index` topic uses `deposits.length - 1` of the just-pushed entry.
 
   // ============================================================
   //                    VERIFIER STATE
@@ -159,10 +184,18 @@ contract SigilVerifier {
   bytes32 public currentOutputRoot;
 
   /// @notice The proven deposit-queue hash-chain commitment as of
-  ///         the most recent accepted proof's `l1_range_end`. Equal
-  ///         to a historical value of [`depositRoot`] (which moves
-  ///         forward independently as new `deposit()` calls land).
+  ///         the most recent accepted proof's `l1RangeEnd`. Equal to
+  ///         `deposits[lastProcessedDepositCount - 1].rootAfter` (or
+  ///         `bytes32(0)` if `lastProcessedDepositCount == 0`). Each
+  ///         accepted proof advances this to the new
+  ///         `deposits[newProcessedDepositCount - 1].rootAfter`.
   bytes32 public lastProcessedDepositRoot;
+
+  /// @notice Number of deposits folded into
+  ///         `lastProcessedDepositRoot`. Equal to the
+  ///         `newProcessedDepositCount` of the most recent accepted
+  ///         proof. Each accepted proof advances this monotonically.
+  uint64 public lastProcessedDepositCount;
 
   /// @notice Highest L1 block whose deposits have been processed by
   ///         an accepted proof. The next proof must have
@@ -435,9 +468,14 @@ contract SigilVerifier {
         _data
       )
     );
-    depositRoot = keccak256(abi.encodePacked(depositRoot, leaf));
+    bytes32 newRoot = keccak256(abi.encodePacked(depositRoot, leaf));
+    depositRoot = newRoot;
+    deposits.push(DepositMeta({
+      blockNumber: uint64(block.number),
+      rootAfter: newRoot
+    }));
     emit Deposit(
-      depositCount,
+      uint64(deposits.length - 1),
       msg.sender,
       msg.value,
       _to,
@@ -445,7 +483,6 @@ contract SigilVerifier {
       _data,
       leaf
     );
-    unchecked { depositCount++; }
   }
 
   // ============================================================
@@ -462,6 +499,19 @@ contract SigilVerifier {
     bytes32 newOutputRoot;
     bytes32 lastProcessedDepositRoot;
     bytes32 newProcessedDepositRoot;
+
+    /// @dev Number of deposits already folded into
+    ///      `lastProcessedDepositRoot` (i.e., processed by prior
+    ///      proofs). Validated against `this.lastProcessedDepositCount`.
+    uint64 lastProcessedDepositCount;
+
+    /// @dev Number of deposits the SNARK folded into
+    ///      `newProcessedDepositRoot`. Validated against the
+    ///      `deposits[]` array: the indexed deposit must lie within
+    ///      `l1RangeEnd` and the next-indexed deposit (if any) must
+    ///      lie strictly past it (maximality).
+    uint64 newProcessedDepositCount;
+
     uint64 l1RangeStart;
     uint64 l1RangeEnd;
     bytes32 l1BlockHashEnd;
@@ -520,10 +570,55 @@ contract SigilVerifier {
       "SigilVerifier: stale lastProcessedDepositRoot"
     );
     require(
+      pv.lastProcessedDepositCount == lastProcessedDepositCount,
+      "SigilVerifier: stale lastProcessedDepositCount"
+    );
+    require(
       pv.l1RangeStart == lastProvenL1Block + 1,
       "SigilVerifier: non-contiguous l1Range"
     );
     require(pv.l1RangeEnd >= pv.l1RangeStart, "SigilVerifier: empty range");
+
+    // --- 4b. Deposit hash-chain anchor via SLOAD (no L1 state walk). ---
+    //
+    // Validates `pv.newProcessedDepositRoot` against the on-chain
+    // per-deposit snapshot at index `pv.newProcessedDepositCount - 1`,
+    // with maximality enforcement: every deposit at `blockNumber <=
+    // l1RangeEnd` MUST have been folded. Skipping a deposit that L1
+    // included would otherwise let funds be permanently locked.
+    require(
+      pv.newProcessedDepositCount >= pv.lastProcessedDepositCount,
+      "SigilVerifier: newProcessedDepositCount regressed"
+    );
+    require(
+      pv.newProcessedDepositCount <= deposits.length,
+      "SigilVerifier: newProcessedDepositCount past deposits.length"
+    );
+    if (pv.newProcessedDepositCount == 0) {
+      require(
+        pv.newProcessedDepositRoot == bytes32(0),
+        "SigilVerifier: newProcessedDepositRoot must be zero before any deposit"
+      );
+    } else {
+      DepositMeta memory anchor = deposits[pv.newProcessedDepositCount - 1];
+      require(
+        anchor.blockNumber <= pv.l1RangeEnd,
+        "SigilVerifier: anchor deposit past l1RangeEnd"
+      );
+      require(
+        pv.newProcessedDepositRoot == anchor.rootAfter,
+        "SigilVerifier: newProcessedDepositRoot mismatch with snapshot"
+      );
+      // Maximality: the next deposit (if any) must lie strictly past
+      // l1RangeEnd, otherwise the prover skipped a deposit it should
+      // have folded.
+      if (pv.newProcessedDepositCount < deposits.length) {
+        require(
+          deposits[pv.newProcessedDepositCount].blockNumber > pv.l1RangeEnd,
+          "SigilVerifier: skipped deposit at or before l1RangeEnd"
+        );
+      }
+    }
     require(pv.chainId == CHAIN_ID, "SigilVerifier: chainId mismatch");
     require(
       pv.l1ChainId == L1_CHAIN_ID,
@@ -621,6 +716,7 @@ contract SigilVerifier {
     bytes32 oldOutputRoot = currentOutputRoot;
     currentOutputRoot = pv.newOutputRoot;
     lastProcessedDepositRoot = pv.newProcessedDepositRoot;
+    lastProcessedDepositCount = pv.newProcessedDepositCount;
     lastProvenL1Block = pv.l1RangeEnd;
     proven[pv.newOutputRoot] = true;
 
